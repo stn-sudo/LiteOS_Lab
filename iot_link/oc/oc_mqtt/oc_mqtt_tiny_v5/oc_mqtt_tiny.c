@@ -98,7 +98,10 @@ static const char s_oc_mqtt_ca_crt[] =
 #define CN_HMAC_LEN              32
 #define CN_STRING_MAXLEN         127
 
-#define CN_OC_MQTT_TIMEOUT      (10*1000)
+#define CN_OC_MQTT_TIMEOUT             (10*1000)
+#define CN_OC_MQTT_LIFETIMEDEFAULT     (120)
+#define CN_OC_MQTT_LIFELEAST           (30)
+#define CN_OC_MQTT_LIFEMAX             (1200)
 
 const char *s_new_topic_fmt[]=
 {
@@ -225,7 +228,7 @@ static void bs_msg_default_deal(void *arg,mqtt_al_msgrcv_t *msg)
 
    char   *json_buf;
 
-   LINK_LOG_DEBUG("bs topic:%s qos:%d\n\r",msg->topic.data,msg->qos);
+   LINK_LOG_DEBUG("bs topic:%s qos:%d",msg->topic.data,(int)msg->qos);
 
    json_buf = osal_malloc(msg->msg.len + 1);
    if(NULL == json_buf)
@@ -236,14 +239,14 @@ static void bs_msg_default_deal(void *arg,mqtt_al_msgrcv_t *msg)
    (void) memcpy(json_buf,msg->msg.data,msg->msg.len);
    json_buf[msg->msg.len] = '\0';
 
-   LINK_LOG_DEBUG("msg:%s\n\r",json_buf);
+   LINK_LOG_DEBUG("msg:%s",json_buf);
    root = cJSON_Parse(json_buf);
    if(NULL != root)
    {
        addr_item = cJSON_GetObjectItem(root,"address");
        if(NULL != addr_item)
        {
-           LINK_LOG_DEBUG("address:%s\n\r", addr_item->valuestring);
+           LINK_LOG_DEBUG("address:%s", addr_item->valuestring);
            port = strrchr(addr_item->valuestring, ':');
            if(NULL != port)
            {
@@ -495,28 +498,8 @@ static int config_parameter_clone(oc_mqtt_tiny_cb_t *cb,oc_mqtt_config_t *config
             cb->config.security.u.cert.client_pk_pwd_len = config->security.u.cert.client_pk_pwd_len ;
             cb->config.security.u.cert.client_pk_pwd = (uint8_t *)mem_buf;
             (void) memcpy( mem_buf, config->security.u.cert.client_pk_pwd, config->security.u.cert.client_pk_pwd_len );
-//            mem_buf += config->security.u.cert.client_pk_pwd_len;
         }
     }
-//    else if(config->security.type == EN_DTLS_AL_SECURITY_TYPE_PSK)
-//    {
-//        if ( 0 != config->security.u.psk.psk_id_len)
-//        {
-//            cb->config.security.u.psk.psk_id_len = config->security.u.psk.psk_id_len ;
-//            cb->config.security.u.psk.psk_id = (uint8_t *)mem_buf;
-//            (void) memcpy( mem_buf, config->security.u.psk.psk_id, config->security.u.psk.psk_id_len );
-//            mem_buf += config->security.u.psk.psk_id_len;
-//        }
-//
-//        if ( 0 != config->security.u.psk.psk_key_len)
-//        {
-//            cb->config.security.u.psk.psk_key_len = config->security.u.psk.psk_key_len;
-//            cb->config.security.u.psk.psk_key = (uint8_t *)mem_buf;
-//            (void) memcpy( mem_buf, config->security.u.psk.psk_key, config->security.u.psk.psk_key_len );
-//            mem_buf += config->security.u.psk.psk_id_len;
-//        }
-//    }
-
 
     unsigned int i = 0;
     for(i = 0;i < CN_NEW_TOPIC_NUM;i++)
@@ -682,17 +665,16 @@ static int dmp_connect(oc_mqtt_tiny_cb_t *cb)
     conpara.cleansession = 1;
     conpara.keepalivetime = cb->config.lifetime;
     conpara.security = &cb->config.security;
-
     conpara.serveraddr.data = (char *)cb->mqtt_para.server_addr;
     conpara.serveraddr.len = strlen(conpara.serveraddr.data);
     conpara.serverport = atoi(cb->mqtt_para.server_port);
-    conpara.timeout = 10000;
+    conpara.timeout = CN_OC_MQTT_TIMEOUT;
     conpara.version = en_mqtt_al_version_3_1_1;
     conpara.willmsg = NULL;
 
-    LINK_LOG_DEBUG("oc_mqtt_connect:server:%s port:%s \n\r",cb->mqtt_para.server_addr,cb->mqtt_para.server_port);
-    LINK_LOG_DEBUG("oc_mqtt_connect:client_id:%s \n\r",cb->mqtt_para.mqtt_clientid);
-    LINK_LOG_DEBUG("oc_mqtt_connect:user:%s passwd:%s \n\r",cb->mqtt_para.mqtt_user,(cb->mqtt_para.mqtt_passwd==NULL)?"NULL":cb->mqtt_para.mqtt_passwd);
+    LINK_LOG_DEBUG("oc_mqtt_connect:server:%s port:%s",cb->mqtt_para.server_addr,cb->mqtt_para.server_port);
+    LINK_LOG_DEBUG("oc_mqtt_connect:client_id:%s",cb->mqtt_para.mqtt_clientid);
+    LINK_LOG_DEBUG("oc_mqtt_connect:user:%s passwd:%s",cb->mqtt_para.mqtt_user,(cb->mqtt_para.mqtt_passwd==NULL)?"NULL":cb->mqtt_para.mqtt_passwd);
     cb->mqtt_para.mqtt_handle = mqtt_al_connect(&conpara);
 
     if(NULL != cb->mqtt_para.mqtt_handle)
@@ -723,7 +705,7 @@ static int dmp_connect(oc_mqtt_tiny_cb_t *cb)
         }
     }
 
-    LINK_LOG_DEBUG("oc_mqtt_connect:recode:%d :%s\n\r",ret,ret==(int)en_oc_mqtt_err_ok?"SUCCESS":"FAILED");
+    LINK_LOG_DEBUG("oc_mqtt_connect:recode:%d :%s",ret,ret==(int)en_oc_mqtt_err_ok?"SUCCESS":"FAILED");
 
     return ret;
 
@@ -734,7 +716,7 @@ static int dmp_subscribe(oc_mqtt_tiny_cb_t *cb)
     int  ret = (int)en_oc_mqtt_err_system;
     mqtt_al_subpara_t   subpara;
 
-    LINK_LOG_DEBUG("oc_mqtt_subscribe:start\n\r");
+    LINK_LOG_DEBUG("oc_mqtt_subscribe:start");
 
     if(NULL == cb->mqtt_para.mqtt_handle)
     {
@@ -756,8 +738,10 @@ static int dmp_subscribe(oc_mqtt_tiny_cb_t *cb)
     subpara.qos = en_mqtt_al_qos_1;
     subpara.topic.data = cb->mqtt_para.default_sub_topic ;
     subpara.topic.len = strlen(subpara.topic.data );
+    subpara.timeout = CN_OC_MQTT_TIMEOUT;
 
-    LINK_LOG_DEBUG("oc_mqtt_default_subscribe:topic:%s\n\r",subpara.topic.data);
+
+    LINK_LOG_DEBUG("oc_mqtt_default_subscribe:topic:%s",subpara.topic.data);
 
     ret = mqtt_al_subscribe(cb->mqtt_para.mqtt_handle,&subpara);
     if(0 != ret)
@@ -765,7 +749,7 @@ static int dmp_subscribe(oc_mqtt_tiny_cb_t *cb)
         ret = (int)en_oc_mqtt_err_subscribe;
     }
 
-    LINK_LOG_DEBUG("oc_mqtt_default_subscribe:retcode:%d:%s\n\r",ret,oc_mqtt_err(ret));
+    LINK_LOG_DEBUG("oc_mqtt_default_subscribe:retcode:%d:%s",ret,oc_mqtt_err(ret));
 
     ///if not the bs mode, then subscribe all the other topic
     if(cb->flag.bits.bit_daemon_status != (int)en_daemon_status_bs_getaddr)
@@ -779,11 +763,11 @@ static int dmp_subscribe(oc_mqtt_tiny_cb_t *cb)
             subpara.topic.len = strlen(subpara.topic.data );
             subpara.timeout = CN_OC_MQTT_TIMEOUT;
 
-            LINK_LOG_DEBUG("oc_mqtt_subscribe:topic:%s\n\r",subpara.topic.data);
+            LINK_LOG_DEBUG("oc_mqtt_subscribe:topic:%s",subpara.topic.data);
 
             ret = mqtt_al_subscribe(cb->mqtt_para.mqtt_handle,&subpara);
 
-            LINK_LOG_DEBUG("oc_mqtt_subscribe:retcode:%d:%s\n\r",ret,oc_mqtt_err(ret));
+            LINK_LOG_DEBUG("oc_mqtt_subscribe:retcode:%d:%s",ret,oc_mqtt_err(ret));
             if(0 != ret)
             {
                  ret = (int)en_oc_mqtt_err_subscribe;
@@ -802,7 +786,7 @@ static int dmp_subscribe(oc_mqtt_tiny_cb_t *cb)
             subpara.topic.len = strlen(subpara.topic.data );
             subpara.timeout = CN_OC_MQTT_TIMEOUT;
 
-            LINK_LOG_DEBUG("oc_mqtt_subscribe:topic:%s\n\r",subpara.topic.data);
+            LINK_LOG_DEBUG("oc_mqtt_subscribe:topic:%s",subpara.topic.data);
 
             ret = mqtt_al_subscribe(cb->mqtt_para.mqtt_handle,&subpara);
 
@@ -812,6 +796,7 @@ static int dmp_subscribe(oc_mqtt_tiny_cb_t *cb)
                  ret = (int)en_oc_mqtt_err_subscribe;
                  break;
             }
+            topic_sub = topic_sub->nxt;
         }
     }
 
@@ -839,22 +824,18 @@ static int dmp_publish(oc_mqtt_tiny_cb_t *cb,char *topic, uint8_t *msg, int len,
     pubpara.topic.len =strlen(pubpara.topic.data );
     pubpara.msg.data = (char *)msg;
     pubpara.msg.len = len;
-
-    LINK_LOG_DEBUG("oc_mqtt_publish:topic:%s  qos:%d msglen:%d\n\r",topic,qos,len);
-
     ret = mqtt_al_publish(cb->mqtt_para.mqtt_handle, &pubpara);
     if(ret != 0)
     {
         ret = (int)en_oc_mqtt_err_publish;
     }
-    LINK_LOG_DEBUG("oc_mqtt_publish:retcode:%d:%s\n\r",ret,ret==0?"SUCCESS":"FAIL");
     return ret;
 }
 static int hub_step(oc_mqtt_tiny_cb_t  *cb)
 {
     int ret = (int)en_oc_mqtt_err_system;
 
-    LINK_LOG_DEBUG("%s:enter\n\r",__FUNCTION__);
+    LINK_LOG_DEBUG("%s:enter",__FUNCTION__);
     if((int)en_oc_mqtt_err_ok != oc_mqtt_para_gernerate(cb))
     {
         goto EXIT_ERR;
@@ -880,12 +861,12 @@ static int hub_step(oc_mqtt_tiny_cb_t  *cb)
         }
     }
 
-    LINK_LOG_DEBUG("%s:ok exit\n\r",__FUNCTION__);
+    LINK_LOG_DEBUG("%s:ok exit",__FUNCTION__);
     return ret;
 
 EXIT_ERR:
     (void) oc_mqtt_para_release(cb);
-    LINK_LOG_DEBUG("%s:err:%d \n\r",__FUNCTION__,ret);
+    LINK_LOG_DEBUG("%s:err:%d",__FUNCTION__,ret);
     return ret;
 
 }
@@ -896,7 +877,7 @@ static int bs_step(oc_mqtt_tiny_cb_t  *cb)
     int ret = (int)en_oc_mqtt_err_system;
     int wait_times = CN_CON_BACKOFF_MAXTIMES;
 
-    LINK_LOG_DEBUG("%s:enter\n\r",__FUNCTION__);
+    LINK_LOG_DEBUG("%s:enter",__FUNCTION__);
     cb->flag.bits.bit_get_hubaddr = 0;
 
     if((int)en_oc_mqtt_err_ok != oc_mqtt_para_gernerate(cb))
@@ -940,8 +921,7 @@ static int bs_step(oc_mqtt_tiny_cb_t  *cb)
 
 EXIT_ERR:
     (void) oc_mqtt_para_release(cb);
-
-    LINK_LOG_DEBUG("%s:exit ret:%d\n\r",__FUNCTION__,ret);
+    LINK_LOG_DEBUG("%s:exit ret:%d",__FUNCTION__,ret);
 
     return ret;
 
@@ -954,9 +934,9 @@ static int deal_api_subscribe( oc_mqtt_tiny_cb_t  *cb, oc_mqtt_daemon_cmd_t *cmd
     int ret = (int)en_oc_mqtt_err_noconfigured;
     tiny_topic_sub_t  *topic_sub;
     mqtt_al_subpara_t *subpara;
+    mqtt_al_subpara_t  sub_new;
 
     subpara = cmd->arg;
-
     if((int)en_daemon_status_idle == cb->flag.bits.bit_daemon_status)
     {
         ret = (int)en_oc_mqtt_err_noconfigured;
@@ -964,34 +944,58 @@ static int deal_api_subscribe( oc_mqtt_tiny_cb_t  *cb, oc_mqtt_daemon_cmd_t *cmd
     else if(((int)en_daemon_status_hub_keep == cb->flag.bits.bit_daemon_status) &&\
             (en_mqtt_al_connect_ok == mqtt_al_check_status(cb->mqtt_para.mqtt_handle)))
     {
-
-        topic_sub = osal_malloc( sizeof( tiny_topic_sub_t ) + subpara->topic.len + 1 );
-        if ( NULL != topic_sub)
+        ///< checkif the topic has been subscribe
+        topic_sub = cb->subscribe_lst;
+        while(NULL != topic_sub)
         {
-
-            subpara->arg = cb;
-            subpara->dealer = hub_msg_default_deal;
-            subpara->timeout = CN_OC_MQTT_TIMEOUT;
-            if( 0  == mqtt_al_subscribe( cb->mqtt_para.mqtt_handle, subpara) )
+            if(0 == strcmp(topic_sub->topic, subpara->topic.data))
             {
-                ///< initialize the subtopic add it to the subscribe list
-                topic_sub->qos = (int) subpara->qos;
-                topic_sub->topic = (char *)topic_sub + sizeof(tiny_topic_sub_t);
-                (void) strncpy(topic_sub->topic, subpara->topic.data,strlen(subpara->topic.data)+1);
-                topic_sub->nxt = cb->subscribe_lst;
-                cb->subscribe_lst = topic_sub;
+                break;
+            }
+            topic_sub = topic_sub->nxt;
+        }
 
-                ret = (int)en_oc_mqtt_err_ok;
-            }
-            else
-            {
-                osal_free ( topic_sub );
-                ret = (int)en_oc_mqtt_err_subscribe;
-            }
+        if(NULL != topic_sub) ///< THERE HAS BEEN ONE
+        {
+            LINK_LOG_DEBUG("RESUBSCRIBED THE SAME TOPIC");
+            ret = (int)en_oc_mqtt_err_subscribe;
         }
         else
         {
-            ret = (int)en_oc_mqtt_err_sysmem;
+            topic_sub = osal_malloc( sizeof( tiny_topic_sub_t ) + subpara->topic.len + 1 );
+            if ( NULL != topic_sub)
+            {
+                ///< initialize the subtopic and add it to the subscribe list when success
+                topic_sub->qos = (int) subpara->qos;
+                topic_sub->topic = (char *)topic_sub + sizeof(tiny_topic_sub_t);
+                (void) strncpy(topic_sub->topic, subpara->topic.data,subpara->topic.len);
+                topic_sub->topic[subpara->topic.len] = '\0';
+
+                ///< copy the old parameters to the new one, for we could not change the user's memory
+                (void)memset(&sub_new,0,sizeof(sub_new));
+                sub_new.arg = cb;
+                sub_new.dealer = hub_msg_default_deal;
+                sub_new.timeout = CN_OC_MQTT_TIMEOUT;
+                sub_new.qos = topic_sub->qos;
+                sub_new.topic.data  = topic_sub->topic;
+                sub_new.topic.len = subpara->topic.len;
+                if( 0  == mqtt_al_subscribe( cb->mqtt_para.mqtt_handle, &sub_new) )
+                {
+                    topic_sub->nxt = cb->subscribe_lst;
+                    cb->subscribe_lst = topic_sub;
+                    ret = (int)en_oc_mqtt_err_ok;
+                }
+                else
+                {
+                    osal_free ( topic_sub );
+                    ret = (int)en_oc_mqtt_err_subscribe;
+                }
+                subpara->subret = sub_new.subret;
+            }
+            else
+            {
+                ret = (int)en_oc_mqtt_err_sysmem;
+            }
         }
     }
     else
@@ -1093,7 +1097,6 @@ static int daemon_entry(void *arg)
     oc_mqtt_daemon_cmd_t   *daemon_cmd = NULL;
 
     cb = arg;
-    LINK_LOG_DEBUG("%s:start\n\r",__FUNCTION__);
     while((NULL != cb) && (0 == cb->daemon_exit))
     {
         if(0 == queue_pop(cb->task_daemon_cmd_queue,(void **)&daemon_cmd,10*1000))
@@ -1145,7 +1148,6 @@ static int daemon_entry(void *arg)
                     }
                     break;
                 case en_oc_mqtt_daemon_cmd_publish:
-                    LINK_LOG_DEBUG("daemon:publish enter\n\r");
                     if((int)en_daemon_status_idle == cb->flag.bits.bit_daemon_status)
                     {
                         daemon_cmd->retcode = (int)en_oc_mqtt_err_noconfigured;
@@ -1162,17 +1164,16 @@ static int daemon_entry(void *arg)
                     {
                         daemon_cmd->retcode = (int)en_oc_mqtt_err_noconected;
                     }
-                    LINK_LOG_DEBUG("daemon:publish exit\n\r");
                     break;
                 case en_oc_mqtt_daemon_cmd_subscribe:
-                    LINK_LOG_DEBUG("daemon:subscribe enter\n\r");
+                    LINK_LOG_DEBUG("daemon:subscribe enter");
                     (void) deal_api_subscribe( cb, daemon_cmd );
-                    LINK_LOG_DEBUG("daemon:subscribe exit\n\r");
+                    LINK_LOG_DEBUG("daemon:subscribe exit");
                     break;
                 case en_oc_mqtt_daemon_cmd_unsubscribe:
-                    LINK_LOG_DEBUG("daemon:unsubscribe enter\n\r");
+                    LINK_LOG_DEBUG("daemon:unsubscribe enter");
                     (void) deal_api_unsubscribe( cb, daemon_cmd );
-                    LINK_LOG_DEBUG("daemon:unsubscribe exit\n\r");
+                    LINK_LOG_DEBUG("daemon:unsubscribe exit");
                     break;
 
                 default:
@@ -1210,7 +1211,7 @@ static int daemon_entry(void *arg)
         }
     }
 
-    LINK_LOG_DEBUG("%s:quit\n\r",__FUNCTION__);
+    LINK_LOG_DEBUG("%s:quit",__FUNCTION__);
     return 0;
 }
 
@@ -1226,6 +1227,25 @@ static int tiny_config(oc_mqtt_config_t *config)
         {
             return ret;
         }
+        if(config->boot_mode != en_oc_mqtt_mode_nobs_static_nodeid_hmacsha256_notimecheck_json )
+        {
+            LINK_LOG_DEBUG("BS NOT SUPPORT YET");
+            ret = en_oc_mqtt_err_gethubaddrtimeout;
+            return ret;
+        }
+
+        if(config->lifetime == 0)
+        {
+            config->lifetime = CN_OC_MQTT_LIFETIMEDEFAULT;
+        }
+        else if(config->lifetime < CN_OC_MQTT_LIFELEAST)
+        {
+            config->lifetime = CN_OC_MQTT_LIFELEAST;
+        }
+        else if(config->lifetime > CN_OC_MQTT_LIFEMAX)
+        {
+            config->lifetime = CN_OC_MQTT_LIFEMAX;
+        }
 
         if(NULL == config->id)   ///< we should know your id
         {
@@ -1239,10 +1259,6 @@ static int tiny_config(oc_mqtt_config_t *config)
 
         if(config->security.type == EN_DTLS_AL_SECURITY_TYPE_CERT)
         {
-            if(NULL == config->security.u.cert.server_ca)  ///< should config the server ca
-            {
-                return ret;
-            }
             if((NULL != config->security.u.cert.client_ca) && (NULL != config->security.u.cert.client_pk))
             {
                 cert_mode = 1;
@@ -1335,6 +1351,7 @@ static int tiny_unsubscribe(char *topic)
     (void) memset(&unsubpara, 0, sizeof(unsubpara));
     unsubpara.topic.data = topic;
     unsubpara.topic.len = strlen(topic);
+    unsubpara.timeout = CN_OC_MQTT_TIMEOUT;
     ret = daemon_cmd_post(en_oc_mqtt_daemon_cmd_unsubscribe,&unsubpara);
 
     return ret;

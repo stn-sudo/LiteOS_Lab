@@ -75,53 +75,49 @@ static int app_msg_deal(void *arg,mqtt_al_msgrcv_t *msg)
     int ret = -1;
 
     char *request_id = NULL;
-    char *request_id_buf = NULL;
-    int   request_id_len = 0;
-
+    char *topicbuf;
     oc_mqtt_profile_msgrcv_t  message;
 
+    topicbuf = osal_malloc(msg->topic.len + 1);
+    if(NULL == topicbuf)
+    {
+        return ret;
+    }
+    memcpy(topicbuf, msg->topic.data, msg->topic.len);
+    topicbuf[msg->topic.len] = '\0';
     if(NULL != s_oc_mqtt_profile_cb.rcvfunc)
     {
         message.msg = msg->msg.data;
         message.msg_len = msg->msg.len;
 
-        request_id = strstr(msg->topic.data,CN_OC_MQTT_PROFILE_REQUESTID_INDEX);
+        request_id = strstr(topicbuf,CN_OC_MQTT_PROFILE_REQUESTID_INDEX);
         if(NULL != request_id)
         {
             request_id  += strlen(CN_OC_MQTT_PROFILE_REQUESTID_INDEX);
-
-            request_id_len = (int)( msg->topic.data + msg->topic.len - request_id);
-
-            request_id_buf = osal_malloc(request_id_len + 1);
-            if(NULL != request_id_buf)
-            {
-                (void) memcpy(request_id_buf,request_id,request_id_len);
-                request_id_buf[request_id_len] = '\0';
-            }
-            message.request_id = request_id_buf;
+            message.request_id = request_id;
         }
         else
         {
             message.request_id = NULL;
         }
 
-        if(NULL != strstr(msg->topic.data,CN_OC_MQTT_PROFILE_MSGDOWN_INDEX))
+        if(NULL != strstr(topicbuf,CN_OC_MQTT_PROFILE_MSGDOWN_INDEX))
         {
             message.type = EN_OC_MQTT_PROFILE_MSG_TYPE_DOWN_MSGDOWN;
         }
-        else if(NULL != strstr(msg->topic.data,CN_OC_MQTT_PROFILE_SETPROPERTY_INDEX))
+        else if(NULL != strstr(topicbuf,CN_OC_MQTT_PROFILE_SETPROPERTY_INDEX))
         {
             message.type = EN_OC_MQTT_PROFILE_MSG_TYPE_DOWN_PROPERTYSET;
         }
-        else if(NULL != strstr(msg->topic.data,CN_OC_MQTT_PROFILE_GETPROPERTY_INDEX))
+        else if(NULL != strstr(topicbuf,CN_OC_MQTT_PROFILE_GETPROPERTY_INDEX))
         {
             message.type = EN_OC_MQTT_PROFILE_MSG_TYPE_DOWN_PROPERTYGET;
         }
-        else if(NULL != strstr(msg->topic.data,CN_OC_MQTT_PROFILE_CMD_INDEX))
+        else if(NULL != strstr(topicbuf,CN_OC_MQTT_PROFILE_CMD_INDEX))
         {
             message.type = EN_OC_MQTT_PROFILE_MSG_TYPE_DOWN_COMMANDS;
         }
-        else if(NULL != strstr(msg->topic.data,CN_OC_MQTT_PROFILE_EVENTDOWN_INDEX))
+        else if(NULL != strstr(topicbuf,CN_OC_MQTT_PROFILE_EVENTDOWN_INDEX))
         {
             message.type = EN_OC_MQTT_PROFILE_MSG_TYPE_DOWN_EVENT;
         }
@@ -133,14 +129,9 @@ static int app_msg_deal(void *arg,mqtt_al_msgrcv_t *msg)
         {
             s_oc_mqtt_profile_cb.rcvfunc(&message);
         }
-
-        if(NULL != request_id_buf)
-        {
-            osal_free(request_id_buf);
-        }
-
     }
 
+    osal_free(topicbuf);
     return ret;
 }
 
@@ -156,7 +147,7 @@ int oc_mqtt_profile_connect(oc_mqtt_profile_connect_t *payload)
         return ret;
     }
 
-    memset(&config,0, sizeof(config));
+    (void) memset(&config,0, sizeof(config));
 
     config.boot_mode =payload->boostrap;
     config.id = payload->device_id;
@@ -486,3 +477,47 @@ int oc_mqtt_profile_cmdresp(char *deviceid,oc_mqtt_profile_cmdresp_t *payload)
 
     return ret;
 }
+
+#define CN_OC_MQTT_PROFILE_GETSHADOW_TOPICFMT   "$oc/devices/%s/sys/shadow/get/request_id=%s"
+int oc_mqtt_profile_getshadow(char *deviceid,oc_mqtt_profile_shadowget_t *payload)
+{
+    int ret = (int)en_oc_mqtt_err_parafmt;
+    char *topic;
+    char *msg;
+
+    if(NULL == deviceid)
+    {
+        if(NULL == s_oc_mqtt_profile_cb.device_id)
+        {
+            return ret;
+        }
+        else
+        {
+            deviceid = s_oc_mqtt_profile_cb.device_id;
+        }
+    }
+
+    if((NULL == payload) || (NULL == payload->request_id))
+    {
+        return ret;
+    }
+
+    topic = topic_make(CN_OC_MQTT_PROFILE_GETSHADOW_TOPICFMT, deviceid,payload->request_id);
+    msg = oc_mqtt_profile_package_shadowget(payload);
+
+    if((NULL != topic) && (NULL != msg))
+    {
+        ret = oc_mqtt_publish(topic,(uint8_t *)msg,strlen(msg),(int)en_mqtt_al_qos_1);
+    }
+    else
+    {
+        ret = (int)en_oc_mqtt_err_sysmem;
+    }
+
+    osal_free(topic);
+    osal_free(msg);
+
+    return ret;
+}
+
+

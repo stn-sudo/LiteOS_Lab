@@ -125,40 +125,26 @@ int oc_mqtt_unsubscribe(char *topic)
 
 __attribute__ ((weak)) int oc_mqtt_imp_init(void)
 {
-    LINK_LOG_DEBUG("%s:###please implement oc mqtt by yourself####\n\r",__FUNCTION__);
+    LINK_LOG_DEBUG("%s:###please implement oc mqtt by yourself####",__FUNCTION__);
     return 0;
 }
 
-__attribute__ ((weak)) int oc_mqtt_v5demo_main(void)
+__attribute__ ((weak)) int oc_mqtt_demo_main(void)
 {
-    LINK_LOG_WARN("Please implement the oc mqtt v5 demo yourself \n\r");
+    LINK_LOG_WARN("Please implement the oc mqtt v5 demo yourself");
     return -1;
 }
 
-__attribute__ ((weak)) int oc_mqtt_v1demo_main(void)
-{
-    LINK_LOG_WARN("Please implement the oc mqtt v1 demo yourself \n\r");
-    return -1;
-}
 
 int oc_mqtt_init()
 {
     int ret;
 
     ret = oc_mqtt_imp_init();
-
-    LINK_LOG_DEBUG("IOT_LINK:DO OC MQTT LOAD-IMPLEMENT RET:%d\n\r",ret);
-
-
-
-#ifdef CONFIG_OC_MQTTV1_DEMO
-    (void) oc_mqtt_v1demo_main();
+    LINK_LOG_DEBUG("IOT_LINK:DO OC MQTT LOAD-IMPLEMENT RET:%d",ret);
+#ifdef CONFIG_OCMQTT_DEMOENABLE
+    (void) oc_mqtt_demo_main();
 #endif
-
-#ifdef CONFIG_OC_MQTTV5_DEMO
-    (void) oc_mqtt_v5demo_main();
-#endif
-
 
     return ret;
 }
@@ -193,6 +179,10 @@ const char *oc_mqtt_err(en_oc_mqtt_err_code_t code)
     if((unsigned int)code < CN_ERR_TABITEM)
     {
         ret = s_oc_mqtt_err_tab[(int)code];
+    }
+    else
+    {
+        ret = "UNKNOWN";
     }
     return ret;
 }

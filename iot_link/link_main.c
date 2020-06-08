@@ -49,7 +49,7 @@
 
 
 #define  CN_LINK_VERSION_MAJOR      2
-#define  CN_LINK_VERSION_MINOR      1
+#define  CN_LINK_VERSION_MINOR      2
 #define  CN_LINK_VERSION_FEATURE    1
 
 
@@ -73,7 +73,7 @@ int link_main(void *args)
     s_link_start =1;
 
     (void)osal_init();
-    LINK_LOG_DEBUG("linkmain:%s \n\r",linkmain_version());
+    LINK_LOG_DEBUG("linkmain:%s",linkmain_version());
 
 #ifdef CONFIG_STIMER_ENABLE
     #include <stimer.h>
@@ -87,18 +87,9 @@ int link_main(void *args)
 
     /* add loader code here */
 #ifdef CONFIG_OTA_ENABLE
-    extern void hal_init_ota(void);
-    hal_init_ota();
+    #include <ota_init.h>
+    ota_init();
 #endif
-
-#ifdef CONFIG_LOADER_ENABLE
-    LINK_LOG_DEBUG("loader main!\n");
-    extern int ota_detection();
-    ota_detection();
-    loader_main();
-    return;
-#endif
-    /* add loader code here end */
 
 ///< install the driver framework
 #ifdef CONFIG_DRIVER_ENABLE
@@ -126,7 +117,7 @@ int link_main(void *args)
 
 
 //////////////////////////  TCPIP PROTOCOL /////////////////////////////////////
-#ifdef CONFIG_TCIP_AL_ENABLE
+#ifdef CONFIG_TCPIP_AL_ENABLE
     #include <sal.h>
     (void)link_tcpip_init();
 #endif
@@ -184,7 +175,7 @@ int link_main(void *args)
 
 #ifdef CONFIG_LINKDEMO_ENABLE
     extern int standard_app_demo_main(void);
-    standard_app_demo_main();
+    (void) standard_app_demo_main();
 #endif
 
     return 0;
